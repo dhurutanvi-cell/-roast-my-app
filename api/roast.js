@@ -1,7 +1,6 @@
 // api/roast.js
-// Vercel serverless function — handles roast requests from the frontend.
-// Deploy this file as-is inside an /api folder in your Vercel project;
-// Vercel auto-detects it as a serverless function at POST /api/roast
+// Vercel serverless function — now using Google's Gemini API (free tier).
+// Deploy this file as-is inside an /api folder in your Vercel project.
 
 const SYSTEM_PROMPTS = {
   resume: `You are a sharp-witted career coach who has read 10,000 Indian résumés and
@@ -66,6 +65,8 @@ Respond ONLY with valid JSON in this exact shape, no other text:
 {"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`
 };
 
+const MODEL = 'gemini-2.5-flash'; // generous free-tier limits, no billing required
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Only POST requests are allowed' });
@@ -74,57 +75,54 @@ export default async function handler(req, res) {
   const { category, text, imageBase64, imageMediaType, tier } = req.body;
 
   if (!category || !SYSTEM_PROMPTS[category]) {
-    return res.status(400).json({ error: 'category must be one of: resume, linkedin, dating' });
+    return res.status(400).json({ error: 'category must be one of: resume, linkedin, dating, instagram' });
   }
   if (!text && !imageBase64) {
     return res.status(400).json({ error: 'Provide either text or imageBase64' });
   }
 
-  // Build the user message content — text, image, PDF, or a mix
-  const content = [];
+  // Gemini uses the same "inline_data" format for both images AND PDFs —
+  // no need to branch by file type the way Claude's API requires.
+  const parts = [];
   if (imageBase64) {
-    const isPdf = imageMediaType === 'application/pdf';
-    content.push({
-      type: isPdf ? 'document' : 'image',
-      source: {
-        type: 'base64',
-        media_type: imageMediaType || 'image/jpeg',
+    parts.push({
+      inline_data: {
+        mime_type: imageMediaType || 'image/jpeg',
         data: imageBase64
       }
     });
   }
-  content.push({
-    type: 'text',
+  parts.push({
     text: text || 'Here is the uploaded file — roast and fix it as instructed.'
   });
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 600,
-        system: SYSTEM_PROMPTS[category],
-        messages: [{ role: 'user', content }]
-      })
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPTS[category] }] },
+          contents: [{ parts }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Anthropic API error:', errText);
+      console.error('Gemini API error:', errText);
       return res.status(502).json({ error: 'Roast generation failed, try again' });
     }
 
     const data = await response.json();
-    const rawText = data.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('')
-      .trim();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    if (!rawText) {
+      console.error('Empty response from Gemini:', JSON.stringify(data));
+      return res.status(502).json({ error: 'Roast came back empty, try again' });
+    }
 
     let parsed;
     try {
