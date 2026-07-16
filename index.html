@@ -157,6 +157,44 @@
     font-family:'Space Mono', monospace;
   }
 
+  .or-divider{
+    text-align:center;
+    font-family:'Space Mono', monospace;
+    font-size:12px;
+    color:var(--text-dim);
+    margin:18px 0;
+    max-width:480px;
+  }
+
+  .paste-box{max-width:480px;}
+  .paste-box textarea{
+    width:100%;
+    min-height:90px;
+    background:transparent;
+    border:2px solid var(--paper-2);
+    border-radius:16px;
+    padding:16px;
+    color:var(--text-light);
+    font-family:'Work Sans', sans-serif;
+    font-size:14px;
+    resize:vertical;
+  }
+  .paste-box textarea:focus{outline:none; border-color:var(--turmeric);}
+  .paste-box textarea::placeholder{color:var(--text-dim);}
+  .paste-btn{
+    margin-top:10px;
+    background:var(--turmeric);
+    color:var(--ink);
+    border:none;
+    padding:11px 20px;
+    border-radius:100px;
+    font-weight:700;
+    font-size:13px;
+    cursor:pointer;
+    font-family:'Work Sans', sans-serif;
+  }
+  .paste-btn:hover{opacity:0.9;}
+
   .meter-card{
     background:var(--paper);
     border-radius:20px;
@@ -341,6 +379,7 @@
         <button class="chip active" data-category="resume">Résumé</button>
         <button class="chip" data-category="linkedin">LinkedIn</button>
         <button class="chip" data-category="dating">Dating Profile</button>
+        <button class="chip" data-category="instagram">Instagram</button>
       </div>
 
       <input type="file" id="resumeUpload" accept=".pdf,image/*" hidden>
@@ -352,6 +391,14 @@
           <span>PDF or image — your call</span>
         </div>
       </div>
+
+      <div class="or-divider">— or —</div>
+
+      <div class="paste-box">
+        <textarea id="pasteText" placeholder="Paste your text here instead — LinkedIn headline + About section, your Instagram bio, or your résumé content"></textarea>
+        <button class="paste-btn" id="pasteSubmit">Roast this text →</button>
+      </div>
+
       <div class="disclaimer">// no signup needed for your first roast. we're mean, not evil.</div>
     </div>
 
@@ -482,7 +529,7 @@
 
 <script>
 let selectedCategory = 'resume';
-const CATEGORY_LABELS = { resume: 'résumé', linkedin: 'LinkedIn profile', dating: 'dating profile' };
+const CATEGORY_LABELS = { resume: 'résumé', linkedin: 'LinkedIn profile', dating: 'dating profile', instagram: 'Instagram profile' };
 
 // Chip selection
 document.querySelectorAll('#chipRow .chip').forEach(chip => {
@@ -521,44 +568,33 @@ function resetGauge() {
   document.getElementById('gaugeSub').textContent = "We'll rate the spice level once we see it.";
 }
 
-upload.addEventListener('change', async () => {
-  if (!upload.files.length) return;
-  const file = upload.files[0];
-
-  setUploadStage('👀 Reading your profile...', 'Please wait...');
+async function callRoastApi(payload, onStart, onLabel) {
+  onStart();
   await new Promise(r => setTimeout(r, 700));
   setUploadStage('🔍 Looking for red flags...', 'This might sting.');
 
   try {
-    const imageBase64 = await fileToBase64(file);
-
     const response = await fetch('/api/roast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        category: selectedCategory,
-        imageBase64,
-        imageMediaType: file.type || 'application/pdf',
-        tier: 'free'
-      })
+      body: JSON.stringify({ category: selectedCategory, tier: 'free', ...payload })
     });
 
     if (!response.ok) throw new Error('Roast request failed');
     const result = await response.json();
 
-    setUploadStage('✅ Roasted!', `📄 ${file.name}`);
+    setUploadStage('✅ Roasted!', onLabel);
 
-    // Move the gauge needle to match the returned heat level
     const angle = HEAT_ANGLES[result.heat_level] ?? 0;
     document.getElementById('needle').style.transform = `rotate(${angle}deg)`;
     document.getElementById('gaugeReadout').textContent = HEAT_EMOJI[result.heat_level] || '🌶️ MEDIUM-SPICY';
     document.getElementById('gaugeSub').textContent = '"' + result.roast.slice(0, 60) + (result.roast.length > 60 ? '…' : '') + '"';
 
-    // Render full roast + fixes below the upload box
     const fixesHtml = result.fixes.map(f =>
       f.startsWith('🔒') ? `<li class="locked">${f}</li>` : `<li>${f}</li>`
     ).join('');
 
+    document.querySelectorAll('.roast-result').forEach(el => el.remove());
     previewCard.insertAdjacentHTML('beforeend', `
       <div class="roast-result">
         <hr>
@@ -573,6 +609,29 @@ upload.addEventListener('change', async () => {
     setUploadStage('⚠️ Something went wrong', 'Try again in a moment.');
     resetGauge();
   }
+}
+
+upload.addEventListener('change', async () => {
+  if (!upload.files.length) return;
+  const file = upload.files[0];
+  const imageBase64 = await fileToBase64(file);
+
+  callRoastApi(
+    { imageBase64, imageMediaType: file.type || 'application/pdf' },
+    () => setUploadStage('👀 Reading your profile...', 'Please wait...'),
+    `📄 ${file.name}`
+  );
+});
+
+document.getElementById('pasteSubmit').addEventListener('click', () => {
+  const text = document.getElementById('pasteText').value.trim();
+  if (!text) return;
+
+  callRoastApi(
+    { text },
+    () => setUploadStage('👀 Reading your text...', 'Please wait...'),
+    '📝 Pasted text'
+  );
 });
 </script>
 </body>
