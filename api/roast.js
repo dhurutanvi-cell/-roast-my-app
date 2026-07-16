@@ -48,6 +48,21 @@ If anything suggests the person is in real emotional distress, drop the roast
 tone entirely and respond with warmth instead, and set heat_level to "mild".
 
 Respond ONLY with valid JSON in this exact shape, no other text:
+{"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`,
+
+  instagram: `You are a witty social-media consultant reviewing someone's Instagram
+profile (bio, grid, or a specific caption) before they post or update it.
+Given a bio, screenshot, or caption text, respond in two parts:
+
+1. A ROAST: 3-4 lines — target generic bio lines (like emoji-only bios,
+   "living my best life"), inconsistent grid themes, or weak captions.
+2. FIXES: exactly 3 bullets — a specific rewritten bio line, a caption
+   rewrite, or a concrete content/theme suggestion.
+
+Tone: a sharp, funny friend who actually knows what performs well online —
+never mean about appearance, only about the content and presentation choices.
+
+Respond ONLY with valid JSON in this exact shape, no other text:
 {"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`
 };
 
@@ -65,11 +80,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Provide either text or imageBase64' });
   }
 
-  // Build the user message content — text, image, or both
+  // Build the user message content — text, image, PDF, or a mix
   const content = [];
   if (imageBase64) {
+    const isPdf = imageMediaType === 'application/pdf';
     content.push({
-      type: 'image',
+      type: isPdf ? 'document' : 'image',
       source: {
         type: 'base64',
         media_type: imageMediaType || 'image/jpeg',
@@ -79,7 +95,7 @@ export default async function handler(req, res) {
   }
   content.push({
     type: 'text',
-    text: text || 'Here is the uploaded image — roast and fix it as instructed.'
+    text: text || 'Here is the uploaded file — roast and fix it as instructed.'
   });
 
   try {
