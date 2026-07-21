@@ -1,6 +1,10 @@
 // api/roast.js
-// Vercel serverless function — now using Google's Gemini API (free tier).
+// Vercel serverless function — now using Vercel's own AI Gateway.
 // Deploy this file as-is inside an /api folder in your Vercel project.
+//
+// Why this version: Vercel AI Gateway gives every team $5/month in free
+// credits automatically (no billing setup needed), and model names are
+// maintained by Vercel — so we stop hitting "model deprecated" errors.
 
 const SYSTEM_PROMPTS = {
   resume: `You are a sharp-witted career coach who has read 10,000 Indian résumés and
@@ -65,7 +69,10 @@ Respond ONLY with valid JSON in this exact shape, no other text:
 {"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`
 };
 
-const MODEL = 'gemini-3-flash'; // Google's current default free-tier model for new accounts (2.x models are being blocked for new users)
+// Model string maintained by Vercel — routes to Claude under the hood.
+// If you ever want to switch providers, just change this one line,
+// e.g. to 'google/gemini-3-flash' or 'openai/gpt-5.5'.
+const MODEL = 'anthropic/claude-sonnet-5';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -81,46 +88,52 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Provide either text or imageBase64' });
   }
 
-  // Gemini uses the same "inline_data" format for both images AND PDFs —
-  // no need to branch by file type the way Claude's API requires.
-  const parts = [];
+  // Note: this endpoint reliably supports IMAGE uploads (jpg/png/etc).
+  // PDF support varies by underlying model, so for résumés uploaded as
+  // PDF, encourage the paste-text option instead — it's fully reliable.
+  const userContent = [];
   if (imageBase64) {
-    parts.push({
-      inline_data: {
-        mime_type: imageMediaType || 'image/jpeg',
-        data: imageBase64
+    userContent.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:${imageMediaType || 'image/jpeg'};base64,${imageBase64}`
       }
     });
   }
-  parts.push({
+  userContent.push({
+    type: 'text',
     text: text || 'Here is the uploaded file — roast and fix it as instructed.'
   });
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPTS[category] }] },
-          contents: [{ parts }],
-          generationConfig: { responseMimeType: 'application/json' }
-        })
-      }
-    );
+    const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPTS[category] },
+          { role: 'user', content: userContent }
+        ],
+        response_format: { type: 'json_object' },
+        stream: false
+      })
+    });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Gemini API error:', errText);
+      console.error('AI Gateway error:', errText);
       return res.status(502).json({ error: 'Roast generation failed, try again' });
     }
 
     const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const rawText = data.choices?.[0]?.message?.content?.trim();
 
     if (!rawText) {
-      console.error('Empty response from Gemini:', JSON.stringify(data));
+      console.error('Empty response from AI Gateway:', JSON.stringify(data));
       return res.status(502).json({ error: 'Roast came back empty, try again' });
     }
 
