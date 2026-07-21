@@ -118,7 +118,6 @@ export default async function handler(req, res) {
           { role: 'system', content: SYSTEM_PROMPTS[category] },
           { role: 'user', content: userContent }
         ],
-        response_format: { type: 'json_object' },
         stream: false
       })
     });
