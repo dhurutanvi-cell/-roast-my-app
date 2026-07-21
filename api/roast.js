@@ -65,7 +65,7 @@ Respond ONLY with valid JSON in this exact shape, no other text:
 {"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`
 };
 
-const MODEL = 'gemini-flash-latest'; // auto-updating alias — avoids breaking again when Google retires a pinned version
+const MODEL = 'gemini-2.5-flash-lite'; // stable (non-experimental) model — more reliable availability than the "latest" alias
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
