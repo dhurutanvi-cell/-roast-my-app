@@ -65,7 +65,7 @@ Respond ONLY with valid JSON in this exact shape, no other text:
 {"roast": "string", "fixes": ["string", "string", "string"], "heat_level": "mild|medium|spicy|nuclear"}`
 };
 
-const MODEL = 'gemini-2.5-flash-lite'; // stable (non-experimental) model — more reliable availability than the "latest" alias
+const MODEL = 'gemini-3-flash'; // Google's current default free-tier model for new accounts (2.x models are being blocked for new users)
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
